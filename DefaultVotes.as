@@ -57,8 +57,6 @@ void onInit(CRules@ this)
 	this.addCommandID(votescramble_id);
 	this.addCommandID(votescramble_id_client);
     this.addCommandID("sync_nextmap_counter");
-
-    onRestart(this);
 }
 
 void onRestart(CRules@ this)
@@ -93,6 +91,7 @@ void onNewPlayerJoin(CRules@ this, CPlayer@ player)
 	this.set_s32("last vote counter player " + username, 0);
 	this.SyncToPlayer("last vote counter player " + username, player);
 
+	if (!isServer()) return;
     if (this.get_s32("last nextmap counter player " + username) == 0 && this.isWarmup())
     {
         this.set_s32("last nextmap counter player " + username, 60 * getTicksASecond()*required_minutes_nextmap);
@@ -1011,15 +1010,18 @@ void onCommand(CRules@ this, u8 cmd, CBitStream @params)
     {
         if (!isClient()) return;
 
+		printf("1");
         u16 id;
         if (!params.saferead_u16(id)) return;
+		printf("2");
 
         CPlayer@ local = getLocalPlayer();
         if (local is null || (local.getNetworkID() != id && id != 0)) return;
-        if (local is null) return;
+		printf("3");
 
         s32 nextmap_counter;
         if (!params.saferead_s32(nextmap_counter)) return;
+		printf(' '+nextmap_counter);
 
         this.set_s32("last nextmap counter player "+local.getUsername(), nextmap_counter);
     }
@@ -1083,16 +1085,17 @@ void onCommand(CRules@ this, u8 cmd, CBitStream @params)
 	}
 	else if (cmd == this.getCommandID(votenextmap_id) && isServer())
 	{
+		printf("a1");
 		u8 reasonid;
 		if (!params.saferead_u8(reasonid)) return;
-
+		printf("a2");
 		if (reasonid >= nextmap_reason_count) return;
-
+		printf("a3");
 		CPlayer@ byplayer = getNet().getActiveCommandPlayer();
 		if (byplayer is null) return;
-
+		printf("a4");
 		if (!server_canPlayerStartVote(this, byplayer, null, cmd)) return;
-
+		printf("a5");
 		printf("gv " + byplayer.getUsername());
 		this.set_s32("last nextmap counter player " + byplayer.getUsername(), 0);
 		SyncNextmapCounter(this, byplayer, true);
