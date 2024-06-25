@@ -103,7 +103,7 @@ void onNewPlayerJoin(CRules@ this, CPlayer@ player)
 // /rcon printf(''+getRules().get_s32('last nextmap counter player '+getPlayer(0).getUsername()))
 void onTick(CRules@ this)
 {
-	if (getGameTime()%30==0 && getPlayer(0) !is null)printf(''+(this.get_s32("last vote counter player " + getPlayer(0).getUsername())));
+	if (getGameTime()%30==0 && getPlayer(0) !is null)printf(''+(this.get_s32("last nextmap counter player " + getPlayer(0).getUsername())));
 	// server-side counter for every player since we don't trust the client
 	if (isServer())
 	{
@@ -1011,18 +1011,14 @@ void onCommand(CRules@ this, u8 cmd, CBitStream @params)
     {
         if (!isClient()) return;
 
-		printf("1");
         u16 id;
         if (!params.saferead_u16(id)) return;
-		printf("2");
 
         CPlayer@ local = getLocalPlayer();
         if (local is null || (local.getNetworkID() != id && id != 0)) return;
-		printf("3");
 
         s32 nextmap_counter;
         if (!params.saferead_s32(nextmap_counter)) return;
-		printf(' '+nextmap_counter);
 
         this.set_s32("last nextmap counter player "+local.getUsername(), nextmap_counter);
     }
