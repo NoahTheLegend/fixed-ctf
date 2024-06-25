@@ -541,7 +541,8 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 				)
 			);
 		}
-		else if (this.get_s32("last vote counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes || g_haveStartedVote) // synced from server
+		else if (this.get_s32("last vote counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes // synced from server
+				&& (!can_skip_wait || g_haveStartedVote))
 		{
 			string cantstart_info = getTranslatedString(
 				"Voting requires a {REQUIRED_MIN} min wait\n" +
@@ -675,7 +676,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 			);
 		}
 		else if (this.get_s32("last nextmap counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes_nextmap // synced from server
-				|| g_haveStartedVote)
+				&& (!can_skip_wait || g_haveStartedVote))
 		{
 			string cantstart_info = getTranslatedString(
 				"Voting for next map\n" +
