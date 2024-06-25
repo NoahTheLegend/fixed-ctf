@@ -1097,6 +1097,7 @@ void onCommand(CRules@ this, u8 cmd, CBitStream @params)
 		if (!server_canPlayerStartVote(this, byplayer, null, cmd)) return;
 		printf("a5");
 		printf("gv " + byplayer.getUsername());
+		printf(""+this.get_s32("last nextmap counter player " + byplayer.getUsername()));
 		this.set_s32("last nextmap counter player " + byplayer.getUsername(), 0);
 		SyncNextmapCounter(this, byplayer, true);
 
