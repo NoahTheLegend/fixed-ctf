@@ -103,7 +103,7 @@ void onNewPlayerJoin(CRules@ this, CPlayer@ player)
 // /rcon printf(''+getRules().get_s32('last nextmap counter player '+getPlayer(0).getUsername()))
 void onTick(CRules@ this)
 {
-	if (getGameTime()%30==0 && getPlayer(0) !is null)printf(''+(this.get_s32("last nextmap counter player " + getPlayer(0).getUsername())));
+	//if (getGameTime()%30==0 && getPlayer(0) !is null)printf(''+(this.get_s32("last nextmap counter player " + getPlayer(0).getUsername())));
 	// server-side counter for every player since we don't trust the client
 	if (isServer())
 	{
@@ -541,8 +541,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 				)
 			);
 		}
-		else if (this.get_s32("last vote counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes // synced from server
-				&& (!can_skip_wait || g_haveStartedVote))
+		else if (this.get_s32("last vote counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes || g_haveStartedVote) // synced from server
 		{
 			string cantstart_info = getTranslatedString(
 				"Voting requires a {REQUIRED_MIN} min wait\n" +
@@ -676,7 +675,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 			);
 		}
 		else if (this.get_s32("last nextmap counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes_nextmap // synced from server
-				&& (!can_skip_wait || g_haveStartedVote))
+				|| g_haveStartedVote)
 		{
 			string cantstart_info = getTranslatedString(
 				"Voting for next map\n" +
@@ -961,7 +960,7 @@ void Callback_Scramble(CBitStream@ params)
 bool server_canPlayerStartVote(CRules@ this, CPlayer@ player, CPlayer@ other_player, u8 cmdid)
 {
 	if (player is null) return false;
-
+d
 	bool can_skip_wait = getSecurity().checkAccess_Feature(player, "skip_votewait");
 
 	if (cmdid == this.getCommandID(votekick_id))
