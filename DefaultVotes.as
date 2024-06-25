@@ -960,7 +960,7 @@ void Callback_Scramble(CBitStream@ params)
 bool server_canPlayerStartVote(CRules@ this, CPlayer@ player, CPlayer@ other_player, u8 cmdid)
 {
 	if (player is null) return false;
-d
+
 	bool can_skip_wait = getSecurity().checkAccess_Feature(player, "skip_votewait");
 
 	if (cmdid == this.getCommandID(votekick_id))
