@@ -103,6 +103,7 @@ void onNewPlayerJoin(CRules@ this, CPlayer@ player)
 // /rcon printf(''+getRules().get_s32('last nextmap counter player '+getPlayer(0).getUsername()))
 void onTick(CRules@ this)
 {
+	if (getGameTime()%30==0)printf(''+(this.get_s32("last vote counter player " + me.getUsername())));
 	// server-side counter for every player since we don't trust the client
 	if (isServer())
 	{
