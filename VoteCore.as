@@ -16,8 +16,11 @@ void onRender(CRules@ this)
 {
 	if (g_videorecording)
 		return;
-
+    
+    bool gt = getGameTime()%90==0;
+    if (gt) printf("1");
 	if (!Rules_AlreadyHasVote(this)) return;
+    if (gt) printf("2");
 
 	VoteObject@ vote = Rules_getVote(this);
 	CPlayer@ me = getLocalPlayer();
@@ -28,6 +31,7 @@ void onRender(CRules@ this)
 	const bool can_cancel = getSecurity().checkAccess_Feature(me, "vote_cancel");
 
 	if ((!CanPlayerVote(vote, me) && !can_force_pass && !can_cancel) || g_have_voted) return;
+    if (gt) printf("3");
 
 	Vec2f tl = getTopLeft();
 	Vec2f br = tl + dim;
