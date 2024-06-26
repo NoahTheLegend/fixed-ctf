@@ -3,8 +3,11 @@
 #include "VoteCommon.as"
 
 bool g_haveStartedVote = false;
-
+s32 g_lastVoteCounter = 0;
+string g_lastUsernameVoted = "";
 const float required_minutes = 10; //time you have to wait after joining w/o skip_votewait.
+
+s32 g_lastNextmapCounter = 0;
 const float required_minutes_nextmap = 10; //global nextmap vote cooldown
 
 const s32 VoteKickTime = 30; //minutes (30min default)
@@ -21,7 +24,7 @@ enum kick_reason
 };
 string[] kick_reason_string = { "Griefer", "Hacker", "Teamkiller", "Chat Spam", "Non-Participation" };
 
-u8 g_kick_reason_id = kick_reason_griefer; // default
+string g_kick_reason = kick_reason_string[kick_reason_griefer]; //default
 
 //next map related globals and enums
 enum nextmap_reason
@@ -37,98 +40,35 @@ string[] nextmap_reason_string = { "Map Ruined", "Stalemate", "Game Bugged" };
 //votekick and vote nextmap
 
 const string votekick_id = "vote: kick";
-const string votekick_id_client = "vote: kick client";
 const string votenextmap_id = "vote: nextmap";
-const string votenextmap_id_client = "vote: nextmap client";
 const string votesurrender_id = "vote: surrender";
-const string votesurrender_id_client = "vote: surrender client";
 const string votescramble_id = "vote: scramble";
-const string votescramble_id_client = "vote: scramble client";
 
 //set up the ids
 void onInit(CRules@ this)
 {
 	this.addCommandID(votekick_id);
-	this.addCommandID(votekick_id_client);
 	this.addCommandID(votenextmap_id);
-	this.addCommandID(votenextmap_id_client);
 	this.addCommandID(votesurrender_id);
-	this.addCommandID(votesurrender_id_client);
 	this.addCommandID(votescramble_id);
-	this.addCommandID(votescramble_id_client);
-    this.addCommandID("sync_nextmap_counter");
 }
+
 
 void onRestart(CRules@ this)
 {
-	if (isServer())
-	{
-		for (int i=0; i<getPlayerCount(); ++i)
-		{
-			CPlayer@ p = getPlayer(i);
-			if (p is null) continue;
-
-			this.set_s32("last nextmap counter player " + p.getUsername(), 60 * getTicksASecond() * required_minutes_nextmap);
-            SyncNextmapCounter(this, p);
-		}
-	}
+	g_lastNextmapCounter = 60 * getTicksASecond() * required_minutes_nextmap;
 }
 
-void SyncNextmapCounter(CRules@ this, CPlayer@ p, bool for_all = false)
-{
-    if (p is null) return;
-
-    CBitStream params;
-    params.write_u16(for_all ? 0 : p.getNetworkID());
-    params.write_s32(this.get_s32("last nextmap counter player "+p.getUsername()));
-    this.SendCommand(this.getCommandID("sync_nextmap_counter"), params);
-}
-
-void onNewPlayerJoin(CRules@ this, CPlayer@ player)
-{
-	string username = player.getUsername();
-
-	this.set_s32("last vote counter player " + username, 0);
-	this.SyncToPlayer("last vote counter player " + username, player);
-
-	if (!isServer()) return;
-    if (this.get_s32("last nextmap counter player " + username) == 0 && this.isWarmup())
-    {
-        this.set_s32("last nextmap counter player " + username, 60 * getTicksASecond()*required_minutes_nextmap);
-    }
-
-	SyncNextmapCounter(this, player);
-}
-
-// /rcon printf(''+getRules().get_s32('last nextmap counter player '+getPlayer(0).getUsername()))
 void onTick(CRules@ this)
 {
-	//if (getGameTime()%30==0 && getPlayer(0) !is null)printf(''+(this.get_s32("last nextmap counter player " + getPlayer(0).getUsername())));
-	// server-side counter for every player since we don't trust the client
-	if (isServer())
+	if (g_lastVoteCounter < 60 * getTicksASecond()*required_minutes)
 	{
-		// update every 10 seconds only? probably not necessary but whatever
-		if (getGameTime() % (10 * getTicksASecond()) == 0)
-		{
-			for (int i=0; i<getPlayerCount(); ++i)
-			{
-				CPlayer@ p = getPlayer(i);
-				if (p is null) continue;
+		g_lastVoteCounter++;
+	}
 
-				string username = p.getUsername();
-
-				if (this.get_s32("last vote counter player " + username) < 60 * getTicksASecond()*required_minutes)
-				{
-					this.add_s32("last vote counter player " + username, (10 * getTicksASecond()));
-					this.SyncToPlayer("last vote counter player " + username, p);
-				}
-				if (this.get_s32("last nextmap counter player " + username) < 60 * getTicksASecond()*required_minutes_nextmap)
-				{
-					this.add_s32("last nextmap counter player " + username, (10 * getTicksASecond()));
-					SyncNextmapCounter(this, p);
-				}
-			}
-		}
+	if (g_lastNextmapCounter < 60 * getTicksASecond()*required_minutes_nextmap)
+	{
+		g_lastNextmapCounter++;
 	}
 }
 
@@ -155,7 +95,7 @@ class VoteKickFunctor : VoteFunctor
 				vote_message_colour()
 			);
 
-			if (isServer())
+			if (getNet().isServer())
 			{
 				getSecurity().ban(kickplayer, VoteKickTime, "Voted off"); //30 minutes ban
 			}
@@ -166,29 +106,30 @@ class VoteKickFunctor : VoteFunctor
 class VoteKickCheckFunctor : VoteCheckFunctor
 {
 	VoteKickCheckFunctor() {}//dont use this
-	VoteKickCheckFunctor(CPlayer@ _kickplayer, u8 _reasonid)
+	VoteKickCheckFunctor(CPlayer@ _kickplayer, string _reason)
 	{
 		@kickplayer = _kickplayer;
-		reasonid = _reasonid;
+		reason = _reason;
 	}
 
 	CPlayer@ kickplayer;
-	u8 reasonid;
+	string reason;
 
 	bool PlayerCanVote(CPlayer@ player)
 	{
 		if (!VoteCheckFunctor::PlayerCanVote(player)) return false;
 
-		//if (!getSecurity().checkAccess_Feature(player, "mark_player")) return false;
+		if (!getSecurity().checkAccess_Feature(player, "mark_player")) return false;
 
-		if (reasonid == kick_reason_griefer || // "Griefer"
-				reasonid == kick_reason_teamkiller || // TKer
-				reasonid == kick_reason_non_participation) //AFK
+		if (reason.find(kick_reason_string[kick_reason_griefer]) != -1 || //reason contains "Griefer"
+				reason.find(kick_reason_string[kick_reason_teamkiller]) != -1 || //or TKer
+				reason.find(kick_reason_string[kick_reason_non_participation]) != -1) //or AFK
 		{
 			return (player.getTeamNum() == kickplayer.getTeamNum() || //must be same team
 					kickplayer.getTeamNum() == getRules().getSpectatorTeamNum() || //or they're spectator
 					getSecurity().checkAccess_Feature(player, "mark_any_team"));   //or has mark_any_team
 		}
+
 		return true; //spammer, hacker (custom?)
 	}
 };
@@ -213,7 +154,7 @@ class VoteKickLeaveFunctor : VotePlayerLeaveFunctor
 					.replace("{USER}", player.getUsername()),
 				vote_message_colour()
 			);
-			if (isServer())
+			if (getNet().isServer())
 			{
 				getSecurity().ban(player, VoteKickTime, "Ran from vote");
 			}
@@ -224,16 +165,16 @@ class VoteKickLeaveFunctor : VotePlayerLeaveFunctor
 };
 
 //setting up a votekick object
-VoteObject@ Create_Votekick(CPlayer@ player, CPlayer@ byplayer, u8 reasonid)
+VoteObject@ Create_Votekick(CPlayer@ player, CPlayer@ byplayer, string reason)
 {
 	VoteObject vote;
 
 	@vote.onvotepassed = VoteKickFunctor(player);
-	@vote.canvote = VoteKickCheckFunctor(player, reasonid);
+	@vote.canvote = VoteKickCheckFunctor(player, reason);
 	@vote.playerleave = VoteKickLeaveFunctor(player);
 
 	vote.title = "Kick {USER}?";
-	vote.reason = kick_reason_string[reasonid];
+	vote.reason = reason;
 	vote.byuser = byplayer.getUsername();
 	vote.user_to_kick = player.getUsername();
 	vote.forcePassFeature = "ban";
@@ -273,7 +214,7 @@ class VoteNextmapFunctor : VoteFunctor
 	{
 		if (outcome)
 		{
-			if (isServer())
+			if (getNet().isServer())
 			{
 				getRules().SetCurrentState(GAME_OVER);
 			}
@@ -296,13 +237,13 @@ class VoteNextmapCheckFunctor : VoteCheckFunctor
 	bool PlayerCanVote(CPlayer@ player)
 	{
 		if (!VoteCheckFunctor::PlayerCanVote(player)) return false;
-        return true;
-		//return getSecurity().checkAccess_Feature(player, "map_vote");
+
+		return getSecurity().checkAccess_Feature(player, "map_vote");
 	}
 };
 
 //setting up a vote next map object
-VoteObject@ Create_VoteNextmap(CPlayer@ byplayer, u8 reasonid)
+VoteObject@ Create_VoteNextmap(CPlayer@ byplayer, string reason)
 {
 	VoteObject vote;
 
@@ -310,7 +251,7 @@ VoteObject@ Create_VoteNextmap(CPlayer@ byplayer, u8 reasonid)
 	@vote.canvote = VoteNextmapCheckFunctor();
 
 	vote.title = "Skip to next map?";
-	vote.reason = nextmap_reason_string[reasonid];
+	vote.reason = reason;
 	vote.byuser = byplayer.getUsername();
 	vote.forcePassFeature = "nextmap";
 	vote.cancel_on_restart = true;
@@ -352,7 +293,7 @@ class VoteSurrenderFunctor : VoteFunctor
 	{
 		if (outcome)
 		{
-			if (isServer())
+			if (getNet().isServer())
 			{
 				CRules@ rules = getRules();
 				s32 teamWonNum = (team + 1) % rules.getTeamsCount();
@@ -442,7 +383,7 @@ class VoteScrambleFunctor : VoteFunctor
 	{
 		if (outcome)
 		{
-			if (isServer())
+			if (getNet().isServer())
 			{
 				LoadMap(getMap().getMapName());
 			}
@@ -525,7 +466,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 	bool duplicatePlayer = isDuplicatePlayer(me);
 
 	//kick menu
-	if (true) //(getSecurity().checkAccess_Feature(me, "mark_player"))
+	if (getSecurity().checkAccess_Feature(me, "mark_player"))
 	{
 		if (duplicatePlayer)
 		{
@@ -541,7 +482,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 				)
 			);
 		}
-		else if (this.get_s32("last vote counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes // synced from server
+		else if (g_lastVoteCounter < 60 * getTicksASecond()*required_minutes
 				&& (!can_skip_wait || g_haveStartedVote))
 		{
 			string cantstart_info = getTranslatedString(
@@ -583,7 +524,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 			{
 				CPlayer@ player = getPlayer(i);
 
-				//if (player is me) continue; //don't display ourself for kicking
+				//if(player is me) continue; //don't display ourself for kicking
 				//commented out for max lols
 
 				int player_team = player.getTeamNum();
@@ -596,7 +537,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 					if (player.getUsername() != player.getCharacterName())
 						descriptor += " (" + player.getUsername() + ")";
 
-					if (this.get_string("last username voted " + me.getUsername()) == player.getUsername()) // synced from server
+					if(g_lastUsernameVoted == player.getUsername())
 					{
 						string title = getTranslatedString(
 							"Cannot kick {USER}"
@@ -651,7 +592,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 			kickmenu,
 			getTranslatedString("Can't vote"),
 			getTranslatedString(
-				"You are not allowed to votekick\n" +
+				"You are now allowed to votekick\n" +
 				"players on this server\n"
 			)
 		);
@@ -659,7 +600,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 	Menu::addSeparator(kickmenu);
 
 	//nextmap menu
-	if (true) //(getSecurity().checkAccess_Feature(me, "map_vote"))
+	if (getSecurity().checkAccess_Feature(me, "map_vote"))
 	{
 		if (duplicatePlayer)
 		{
@@ -675,7 +616,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 				)
 			);
 		}
-		else if (this.get_s32("last nextmap counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes_nextmap // synced from server
+		else if (g_lastNextmapCounter < 60 * getTicksASecond()*required_minutes_nextmap
 				&& (!can_skip_wait || g_haveStartedVote))
 		{
 			string cantstart_info = getTranslatedString(
@@ -758,7 +699,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 			)
 		);
 	}
-	else if (this.get_s32("last nextmap counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes_nextmap // synced from server
+	else if (g_lastNextmapCounter < 60 * getTicksASecond()*required_minutes_nextmap
 			 && (!can_skip_wait || g_haveStartedVote))
 	{
 		string cantstart_info = getTranslatedString(
@@ -819,7 +760,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 			)
 		);
 	}
-	else if (!this.isWarmup())
+	else if (!this.isWarmup() && !can_skip_wait)
 	{
 		Menu::addInfoBox(
 			scramblemenu,
@@ -830,7 +771,7 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 			)
 		);
 	}
-	else if (this.get_s32("last nextmap counter player " + me.getUsername()) < 60 * getTicksASecond()*required_minutes_nextmap // synced from server
+	else if (g_lastNextmapCounter < 60 * getTicksASecond()*required_minutes_nextmap
 			 && (!can_skip_wait || g_haveStartedVote))
 	{
 		string cantstart_info = getTranslatedString(
@@ -874,6 +815,8 @@ void CloseMenu()
 
 void onPlayerStartedVote()
 {
+	g_lastVoteCounter = 0;
+	g_lastNextmapCounter = 0;
 	g_haveStartedVote = true;
 }
 
@@ -883,7 +826,7 @@ void Callback_KickReason(CBitStream@ params)
 
 	if (id < kick_reason_count)
 	{
-		g_kick_reason_id = id;
+		g_kick_reason = kick_reason_string[id];
 	}
 }
 
@@ -903,12 +846,17 @@ void Callback_Kick(CBitStream@ params)
 	if (getSecurity().checkAccess_Feature(other_player, "kick_immunity"))
 		return;
 
+	//monitor to prevent abuse
+	g_lastUsernameVoted = other_player.getUsername();
+
 	CBitStream params2;
 
 	params2.write_u16(other_player.getNetworkID());
-	params2.write_u8(g_kick_reason_id);
+	params2.write_u16(me.getNetworkID());
+	params2.write_string(g_kick_reason);
 
 	getRules().SendCommand(getRules().getCommandID(votekick_id), params2);
+	onPlayerStartedVote();
 }
 
 void Callback_NextMap(CBitStream@ params)
@@ -921,12 +869,19 @@ void Callback_NextMap(CBitStream@ params)
 	u8 id;
 	if (!params.saferead_u8(id)) return;
 
+	string reason = "";
+	if (id < nextmap_reason_count)
+	{
+		reason = nextmap_reason_string[id];
+	}
+
 	CBitStream params2;
 
 	params2.write_u16(me.getNetworkID());
-	params2.write_u8(id);
+	params2.write_string(reason);
 
 	getRules().SendCommand(getRules().getCommandID(votenextmap_id), params2);
+	onPlayerStartedVote();
 }
 
 void Callback_Surrender(CBitStream@ params)
@@ -941,6 +896,7 @@ void Callback_Surrender(CBitStream@ params)
 	params2.write_u16(me.getNetworkID());
 
 	getRules().SendCommand(getRules().getCommandID(votesurrender_id), params2);
+	onPlayerStartedVote();
 }
 
 void Callback_Scramble(CBitStream@ params)
@@ -955,224 +911,69 @@ void Callback_Scramble(CBitStream@ params)
 	params2.write_u16(me.getNetworkID());
 
 	getRules().SendCommand(getRules().getCommandID(votescramble_id), params2);
-}
-
-
-bool server_canPlayerStartVote(CRules@ this, CPlayer@ player, CPlayer@ other_player, u8 cmdid)
-{
-	if (player is null) return false;
-
-	bool can_skip_wait = getSecurity().checkAccess_Feature(player, "skip_votewait");
-
-	if (cmdid == this.getCommandID(votekick_id))
-	{
-		if (other_player is null) return false;
-
-		// other player has kick immunity?
-		if (getSecurity().checkAccess_Feature(other_player, "kick_immunity"))
-		{
-			return false;
-		}
-
-		// already tried to votekick other player before this?
-		if (this.get_string("last username voted " + player.getUsername()) == other_player.getUsername())
-		{
-			return false;
-		}
-
-		if (!can_skip_wait)
-		{
-			// didnt wait required_minutes yet?
-			if (this.get_s32("last vote counter player " + player.getUsername()) < 60 * getTicksASecond()*required_minutes)
-			{
-				return false;
-			}
-		}
-	}
-	else if (cmdid == this.getCommandID(votenextmap_id))
-	{
-		if (!can_skip_wait)
-		{
-			// didnt wait required_minutes_nextmap yet?
-			if (this.get_s32("last nextmap counter player " + player.getUsername()) < 60 * getTicksASecond()*required_minutes_nextmap)
-			{
-				return false;
-			}
-		}
-	}
-
-	return true;
+	onPlayerStartedVote();
 }
 
 //actually setting up the votes
 void onCommand(CRules@ this, u8 cmd, CBitStream @params)
 {
-    if (cmd == this.getCommandID("sync_nextmap_counter"))
-    {
-        if (!isClient()) return;
-
-        u16 id;
-        if (!params.saferead_u16(id)) return;
-
-        CPlayer@ local = getLocalPlayer();
-        if (local is null || (local.getNetworkID() != id && id != 0)) return;
-
-        s32 nextmap_counter;
-        if (!params.saferead_s32(nextmap_counter)) return;
-
-        this.set_s32("last nextmap counter player "+local.getUsername(), nextmap_counter);
-    }
-
 	if (Rules_AlreadyHasVote(this))
 		return;
 
-	if (cmd == this.getCommandID(votekick_id) && isServer())
+	if (cmd == this.getCommandID(votekick_id))
 	{
-		u16 playerid;
+		u16 playerid, byplayerid;
+		string reason;
+
 		if (!params.saferead_u16(playerid)) return;
-
-		u8 reasonid;
-		if (!params.saferead_u8(reasonid)) return;
-
-		if (reasonid >= kick_reason_count) return;
-
-		CPlayer@ byplayer = getNet().getActiveCommandPlayer();
-		if (byplayer is null) return;
+		if (!params.saferead_u16(byplayerid)) return;
+		if (!params.saferead_string(reason)) return;
 
 		CPlayer@ player = getPlayerByNetworkId(playerid);
-		if (player is null) return;
+		CPlayer@ byplayer = getPlayerByNetworkId(byplayerid);
 
-		if (!server_canPlayerStartVote(this, byplayer, player, cmd)) return;
-
-		this.set_s32("last vote counter player " + byplayer.getUsername(), 0);
-		this.SyncToPlayer("last vote counter player " + byplayer.getUsername(), byplayer);
-
-		this.set_string("last username voted " + byplayer.getUsername(), player.getUsername());
-		this.SyncToPlayer("last username voted " + byplayer.getUsername(), byplayer);
-
-		Rules_SetVote(this, Create_Votekick(player, byplayer, reasonid));
-
-		CBitStream bt;
-		bt.write_u16(playerid);
-		bt.write_u8(reasonid);
-		bt.write_u16(byplayer.getNetworkID());
-
-		this.SendCommand(this.getCommandID(votekick_id_client), bt);
+		if (player !is null && byplayer !is null)
+			Rules_SetVote(this, Create_Votekick(player, byplayer, reason));
 	}
-	else if (cmd == this.getCommandID(votekick_id_client) && isClient())
+	else if (cmd == this.getCommandID(votenextmap_id))
 	{
-		u16 playerid;
-		if (!params.saferead_u16(playerid)) return;
-
-		u8 reasonid;
-		if (!params.saferead_u8(reasonid)) return;
-
-		if (reasonid >= kick_reason_count) return;
-
 		u16 byplayerid;
+		string reason;
+
+		if (!params.saferead_u16(byplayerid)) return;
+		if (!params.saferead_string(reason)) return;
+
+		CPlayer@ byplayer = getPlayerByNetworkId(byplayerid);
+
+		if (byplayer !is null)
+			Rules_SetVote(this, Create_VoteNextmap(byplayer, reason));
+
+		g_lastNextmapCounter = 0;
+	}
+	else if (cmd == this.getCommandID(votesurrender_id))
+	{
+		u16 byplayerid;
+
 		if (!params.saferead_u16(byplayerid)) return;
 
 		CPlayer@ byplayer = getPlayerByNetworkId(byplayerid);
-		if (byplayer is null) return;
 
-		CPlayer@ player = getPlayerByNetworkId(playerid);
-		if (player is null) return;
+		if (byplayer !is null)
+			Rules_SetVote(this, Create_VoteSurrender(byplayer));
 
-		Rules_SetVote(this, Create_Votekick(player, byplayer, reasonid));
+		g_lastNextmapCounter = 0;
 	}
-	else if (cmd == this.getCommandID(votenextmap_id) && isServer())
+	else if (cmd == this.getCommandID(votescramble_id))
 	{
-		printf("a1");
-		u8 reasonid;
-		if (!params.saferead_u8(reasonid)) return;
-		printf("a2");
-		if (reasonid >= nextmap_reason_count) return;
-		printf("a3");
-		CPlayer@ byplayer = getNet().getActiveCommandPlayer();
-		if (byplayer is null) return;
-		printf("a4");
-		if (!server_canPlayerStartVote(this, byplayer, null, cmd)) return;
-		printf("a5");
-		printf("gv " + byplayer.getUsername());
-		printf(""+this.get_s32("last nextmap counter player " + byplayer.getUsername()));
-		this.set_s32("last nextmap counter player " + byplayer.getUsername(), 0);
-		SyncNextmapCounter(this, byplayer, true);
-
-		Rules_SetVote(this, Create_VoteNextmap(byplayer, reasonid));
-
-		CBitStream bt;
-		bt.write_u8(reasonid);
-		bt.write_u16(byplayer.getNetworkID());
-
-		this.SendCommand(this.getCommandID(votenextmap_id_client), bt);
-	}
-	else if (cmd == this.getCommandID(votenextmap_id_client) && isClient())
-	{
-		u8 reasonid;
-		if (!params.saferead_u8(reasonid)) return;
-
-		if (reasonid >= nextmap_reason_count) return;
-
 		u16 byplayerid;
+
 		if (!params.saferead_u16(byplayerid)) return;
 
 		CPlayer@ byplayer = getPlayerByNetworkId(byplayerid);
-		if (byplayer is null) return;
 
-		Rules_SetVote(this, Create_VoteNextmap(byplayer, reasonid));
-	}
-	else if (cmd == this.getCommandID(votesurrender_id) && isServer())
-	{
-		CPlayer@ byplayer = getNet().getActiveCommandPlayer();
-		if (byplayer is null) return;
+		if (byplayer !is null)
+			Rules_SetVote(this, Create_VoteScramble(byplayer));
 
-		if (!server_canPlayerStartVote(this, byplayer, null, cmd)) return;
-
-		this.set_s32("last nextmap counter player " + byplayer.getUsername(), 0);
-		SyncNextmapCounter(this, byplayer);
-
-		Rules_SetVote(this, Create_VoteSurrender(byplayer));
-
-		CBitStream bt;
-		bt.write_u16(byplayer.getNetworkID());
-
-		this.SendCommand(this.getCommandID(votesurrender_id_client), bt);
-	}
-	else if (cmd == this.getCommandID(votesurrender_id_client) && isClient())
-	{
-		u16 byplayerid;
-		if (!params.saferead_u16(byplayerid)) return;
-
-		CPlayer@ byplayer = getPlayerByNetworkId(byplayerid);
-		if (byplayer is null) return;
-
-		Rules_SetVote(this, Create_VoteSurrender(byplayer));
-	}
-	else if (cmd == this.getCommandID(votescramble_id) && isServer())
-	{
-		CPlayer@ byplayer = getNet().getActiveCommandPlayer();
-		if (byplayer is null) return;
-
-		if (!server_canPlayerStartVote(this, byplayer, null, cmd)) return;
-
-		this.set_s32("last nextmap counter player " + byplayer.getUsername(), 0);
-		SyncNextmapCounter(this, byplayer);
-
-		Rules_SetVote(this, Create_VoteScramble(byplayer));
-
-		CBitStream bt;
-		bt.write_u16(byplayer.getNetworkID());
-
-		this.SendCommand(this.getCommandID(votescramble_id_client), bt);
-	}
-	else if (cmd == this.getCommandID(votescramble_id_client) && isClient())
-	{
-		u16 byplayerid;
-		if (!params.saferead_u16(byplayerid)) return;
-
-		CPlayer@ byplayer = getPlayerByNetworkId(byplayerid);
-		if (byplayer is null) return;
-
-		Rules_SetVote(this, Create_VoteScramble(byplayer));
+		g_lastNextmapCounter = 0;
 	}
 }
