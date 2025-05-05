@@ -274,7 +274,7 @@ void onTick(CBlob@ this)
 		}
 		else if (this.isKeyJustReleased(key_inventory))
 		{
-			u8 minimum_ticks = 5;
+			u8 minimum_ticks = 7;
 
 			if (isTap(this, minimum_ticks))     // tap - put thing in inventory
 			{
@@ -293,6 +293,7 @@ void onTick(CBlob@ this)
                         if (item is null) continue;
                         if (item.getMaxQuantity() <= 1) continue;
                         if (item.getQuantity() == item.getMaxQuantity()) continue;
+						if (item.hasTag("temp blob")) continue;
 
                         if (item.getName() == held.getName())
                             can_put = true;
@@ -307,6 +308,7 @@ void onTick(CBlob@ this)
 				{
                     if (this.getName() == "builder")
                     {
+
                         if (held !is null && held.hasTag("temp blob"))
                             held.server_Die();
                         else
