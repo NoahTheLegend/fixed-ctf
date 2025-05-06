@@ -1786,6 +1786,9 @@ bool canHit(CBlob@ this, CBlob@ b)
 	if (b.hasTag("invincible") || b.hasTag("temp blob"))
 		return false;
 	
+	if (b.hasTag("player") && b.getTeamNum() == this.getTeamNum())
+		return false;
+	
 	// don't hit picked up items (except players and specially tagged items)
 	return b.hasTag("player") || b.hasTag("slash_while_in_hand") || !isBlobBeingCarried(b);
 }
