@@ -1071,8 +1071,9 @@ void onCommand(CRules@ this, u8 cmd, CBitStream @params)
 
 		CPlayer@ byplayer = getNet().getActiveCommandPlayer();
 		if (byplayer is null) return;
+		print("0");
 		if (!server_canPlayerStartVote(this, byplayer, null, cmd)) return;
-
+		print("1");
 		printf("gv " + byplayer.getUsername());
 		this.set_s32("last nextmap counter player " + byplayer.getUsername(), 0);
 		this.SyncToPlayer("last nextmap counter player " + byplayer.getUsername(), byplayer);
