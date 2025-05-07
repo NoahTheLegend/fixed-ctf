@@ -639,7 +639,8 @@ void onMainMenuCreated(CRules@ this, CContextMenu@ menu)
 	Menu::addSeparator(kickmenu);
 
 	//nextmap menu
-	if (getSecurity().checkAccess_Feature(me, "map_vote"))
+	//if (getSecurity().checkAccess_Feature(me, "map_vote"))
+	if (true)
 	{
 		if (duplicatePlayer)
 		{
