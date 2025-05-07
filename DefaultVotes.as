@@ -940,31 +940,45 @@ void Callback_Scramble(CBitStream@ params)
 
 bool server_canPlayerStartVote(CRules@ this, CPlayer@ player, CPlayer@ other_player, u8 cmdid)
 {
-	if (player is null) return false;
+	if (player is null) 
+	{
+		print("server_canPlayerStartVote: player is null");
+		return false;
+	}
 
 	bool can_skip_wait = getSecurity().checkAccess_Feature(player, "skip_votewait");
+	print("server_canPlayerStartVote: can_skip_wait = " + can_skip_wait);
 
 	if (cmdid == this.getCommandID(votekick_id))
 	{
-		if (other_player is null) return false;
+		if (other_player is null) 
+		{
+			print("server_canPlayerStartVote: other_player is null for votekick");
+			return false;
+		}
 
 		// other player has kick immunity?
 		if (getSecurity().checkAccess_Feature(other_player, "kick_immunity"))
 		{
+			print("server_canPlayerStartVote: other_player has kick immunity");
 			return false;
 		}
 
 		// already tried to votekick other player before this?
 		if (this.get_string("last username voted " + player.getUsername()) == other_player.getUsername())
 		{
+			print("server_canPlayerStartVote: player already tried to votekick " + other_player.getUsername());
 			return false;
 		}
 
 		if (!can_skip_wait)
 		{
 			// didnt wait required_minutes yet?
-			if (this.get_s32("last vote counter player " + player.getUsername()) < 60 * getTicksASecond()*required_minutes)
+			s32 last_vote_counter = this.get_s32("last vote counter player " + player.getUsername());
+			print("server_canPlayerStartVote: last_vote_counter = " + last_vote_counter);
+			if (last_vote_counter < 60 * getTicksASecond() * required_minutes)
 			{
+				print("server_canPlayerStartVote: player didn't wait required_minutes for votekick");
 				return false;
 			}
 		}
@@ -974,13 +988,17 @@ bool server_canPlayerStartVote(CRules@ this, CPlayer@ player, CPlayer@ other_pla
 		if (!can_skip_wait)
 		{
 			// didnt wait required_minutes_nextmap yet?
-			if (this.get_s32("last nextmap counter player " + player.getUsername()) < 60 * getTicksASecond()*required_minutes_nextmap)
+			s32 last_nextmap_counter = this.get_s32("last nextmap counter player " + player.getUsername());
+			print("server_canPlayerStartVote: last_nextmap_counter = " + last_nextmap_counter);
+			if (last_nextmap_counter < 60 * getTicksASecond() * required_minutes_nextmap)
 			{
+				print("server_canPlayerStartVote: player didn't wait required_minutes_nextmap for votenextmap");
 				return false;
 			}
 		}
 	}
 
+	print("server_canPlayerStartVote: player can start vote");
 	return true;
 }
 
@@ -1053,7 +1071,6 @@ void onCommand(CRules@ this, u8 cmd, CBitStream @params)
 
 		CPlayer@ byplayer = getNet().getActiveCommandPlayer();
 		if (byplayer is null) return;
-
 		if (!server_canPlayerStartVote(this, byplayer, null, cmd)) return;
 
 		printf("gv " + byplayer.getUsername());
